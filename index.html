@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Apple Watch Health Coach</title>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+:root{--teal:#087f89;--deep:#10505b;--ink:#19343d;--muted:#647780;--bg:#eff5f5;--line:#dce7e9;--gold:#e7c77c;--green:#287653}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+header{background:linear-gradient(120deg,#104b57,#078b91);color:white;padding:34px 19px 38px;border-radius:0 0 28px 28px}
+.wrap{max-width:1050px;margin:auto}h1{font-size:29px;margin:0 0 8px;font-weight:850}header p{font-size:16px;margin:0;color:#e5f5f4}
+main{max-width:1050px;margin:20px auto 50px;padding:0 14px}
+.notice{background:#fff8e8;border:1px solid #f0dfb5;border-radius:17px;padding:16px 18px;line-height:1.5;margin-bottom:17px}
+.panel{background:#fff;border:1px solid var(--line);border-radius:19px;padding:19px;margin-bottom:17px;box-shadow:0 5px 20px #173c4709}
+h2{font-size:21px;margin:0 0 13px}.sub{color:var(--muted);line-height:1.5;margin:-3px 0 14px}
+.row{display:flex;gap:11px;align-items:center;flex-wrap:wrap}
+button,.filebtn{border:0;border-radius:12px;padding:13px 16px;font-size:15px;font-weight:750;cursor:pointer;background:var(--teal);color:#fff}
+button.secondary,.filebtn.secondary{background:#eaf3f4;color:#22535b;border:1px solid #cbdfe2}
+input[type=file]{display:none}.status{color:var(--green);font-weight:650;margin-top:12px;line-height:1.5}
+.hint,.small{font-size:12px;color:var(--muted);line-height:1.5;margin-top:12px}
+.section-title{margin:24px 2px 11px;font-size:20px;font-weight:800}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
+.metric{background:#f7f9fa;border:1px solid #e1e9eb;border-radius:16px;padding:15px;min-height:115px}
+.label{font-size:13px;color:var(--muted);font-weight:750}.value{font-size:27px;font-weight:850;margin:8px 0 5px;letter-spacing:-.5px}.date{font-size:12px;color:var(--muted)}
+.chartgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}.chart{height:260px;padding:15px}.chart h3{margin:0 0 10px;font-size:16px}.chart canvas{width:100%!important;height:195px!important}
+.compare{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.summary{line-height:1.6}.summary p{margin:7px 0}
+@media(max-width:650px){header{padding:29px 17px 33px}h1{font-size:25px}.grid{grid-template-columns:repeat(2,1fr)}.chartgrid{grid-template-columns:1fr}.chart{height:250px}.panel{padding:16px}.metric{padding:13px}.value{font-size:24px}}
+@media(max-width:360px){.value{font-size:21px}}
+</style>
+
+<link rel="icon" type="image/png" href="apple-watch-health-coach-icon.png">
+<link rel="apple-touch-icon" href="apple-watch-health-coach-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Health Coach">
+<meta name="theme-color" content="#10505b">
+
+</head>
+<body>
+<header><div class="wrap"><h1>♥ Apple Watch Health Coach</h1><p>Measure → Understand → Compare → Improve</p></div></header>
+<main>
+ <div class="notice"><strong>Personal trend tracking, not diagnosis.</strong> Readings from Apple Watch are estimates and can vary. Your health records are processed in this browser and are not sent to a health service.</div>
+ <section class="panel">
+  <h2>1. Import Apple Health data</h2>
+  <p class="sub">Choose the ZIP file exported by the Apple Health app. You only need to do this again when you want to refresh your dashboard.</p>
+  <div class="row">
+   <label class="filebtn" for="healthZip">📦 Choose Apple Health ZIP</label><input id="healthZip" type="file" accept=".zip,application/zip">
+   <button class="secondary" id="backup">Save backup</button>
+   <label class="filebtn secondary" for="restore">Restore backup</label><input id="restore" type="file" accept=".json">
+  </div>
+  <div id="status" class="status">No data imported yet. Choose your Apple Health export ZIP to begin.</div>
+  <p class="hint">The export is processed on this device. A large Apple Health export may take a few minutes. The app saves a compact daily summary in this browser.</p>
+ </section>
+ <div id="dashboard" class="hidden">
+  <div class="section-title">2. Latest health snapshot</div><section class="grid" id="snapshot"></section>
+  <div class="section-title">3. Latest 30 days vs previous 30 days</div><section class="grid" id="compare"></section>
+  <div class="section-title">4. Your health trends</div>
+  <section class="chartgrid">
+   <div class="panel chart"><h3>Heart rate</h3><canvas id="heartChart"></canvas></div>
+   <div class="panel chart"><h3>Resting heart rate</h3><canvas id="restChart"></canvas></div>
+   <div class="panel chart"><h3>Heart rate variability (HRV)</h3><canvas id="hrvChart"></canvas></div>
+   <div class="panel chart"><h3>Blood oxygen (SpO₂)</h3><canvas id="oxygenChart"></canvas></div>
+   <div class="panel chart"><h3>Sleep duration</h3><canvas id="sleepChart"></canvas></div>
+   <div class="panel chart"><h3>Daily steps</h3><canvas id="stepsChart"></canvas></div>
+   <div class="panel chart"><h3>Respiratory rate</h3><canvas id="respChart"></canvas></div>
+   <div class="panel chart"><h3>Cardio fitness (VO₂ max)</h3><canvas id="vo2Chart"></canvas></div>
+   <div class="panel chart"><h3>Exercise minutes</h3><canvas id="exerciseChart"></canvas></div>
+  </section>
+  <div class="section-title">5. Coach's summary</div><section class="panel summary" id="summary"></section>
+ </div>
+ <p class="small">Some measurements are only recorded occasionally or when enabled on your devices. A blank card means the export did not contain that measurement. HRV is reported in milliseconds (SDNN). Trends are more useful than isolated readings.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const TYPES={
+ heart:'HKQuantityTypeIdentifierHeartRate',
+ resting:'HKQuantityTypeIdentifierRestingHeartRate',
+ hrv:'HKQuantityTypeIdentifierHeartRateVariabilitySDNN',
+ oxygen:'HKQuantityTypeIdentifierOxygenSaturation',
+ steps:'HKQuantityTypeIdentifierStepCount',
+ respiratory:'HKQuantityTypeIdentifierRespiratoryRate',
+ vo2:'HKQuantityTypeIdentifierVO2Max',
+ exercise:'HKQuantityTypeIdentifierAppleExerciseTime'
+};
+let daily={},charts={};
+function day(s){return (s||'').slice(0,10)}
+function num(v){let x=Number(v);return Number.isFinite(x)?x:null}
+function escAttr(s){return String(s||'').replace(/&quot;/g,'"').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')}
+function attrs(tag){let o={};tag.replace(/([\w:]+)="([^"]*)"/g,(_,k,v)=>{o[k]=escAttr(v)});return o}
+function bucket(date,key,value,mode='avg'){if(!date||value==null||!Number.isFinite(value))return;daily[date]??={};let b=daily[date][key]??(daily[date][key]={sum:0,count:0,min:Infinity,max:-Infinity});b.sum+=value;b.count++;b.min=Math.min(b.min,value);b.max=Math.max(b.max,value)}
+function finish(){let out={};Object.entries(daily).forEach(([d,metrics])=>{out[d]={};Object.entries(metrics).forEach(([k,b])=>out[d][k]=k==='steps'||k==='exercise'?b.sum:b.sum/b.count)});return out}
+function parseExport(xml){
+ daily={};let count=0,match;let re=/<Record\b[^>]*\/?>/g;
+ while((match=re.exec(xml))!==null){let a=attrs(match[0]),type=a.type,date=day(a.startDate||a.endDate),v=num(a.value);if(!date)continue;
+  let key=Object.keys(TYPES).find(k=>TYPES[k]===type);if(key&&v!=null){if(key==='oxygen'&&v<=1)v*=100;bucket(date,key,v);count++}
+  if(type==='HKCategoryTypeIdentifierSleepAnalysis'){
+   let val=a.value||'',asleep=/Asleep(Core|Deep|REM)?$/.test(val)||val==='HKCategoryValueSleepAnalysisAsleep'||val==='HKCategoryValueSleepAnalysisAsleepUnspecified';
+   if(asleep){let st=Date.parse(a.startDate),en=Date.parse(a.endDate);if(Number.isFinite(st)&&Number.isFinite(en)&&en>st){let minutes=(en-st)/60000;bucket(day(a.startDate),'sleep',minutes);}}
+  }
+ }
+ // Aggregate workout duration by calendar day of workout start.
+ let wr=/<Workout\b[^>]*\/?>/g;while((match=wr.exec(xml))!==null){let a=attrs(match[0]),d=day(a.startDate),mins=num(a.duration);if(d&&mins!=null)bucket(d,'exercise',mins)}
+ if(!count)throw Error('No recognised Apple Health measurements were found in export.xml.');
+ let result=finish();
+ // Convert sleep minutes to hours; workout minutes and steps remain totals.
+ Object.values(result).forEach(x=>{if(x.sleep!=null)x.sleep=x.sleep/60});
+ return {result,count};
+}
+function latest(rows,key){for(let i=rows.length-1;i>=0;i--)if(rows[i][key]!=null)return rows[i];return null}
+function allRows(){return Object.keys(dailyData).sort().map(date=>({date,...dailyData[date]}))}
+let dailyData={};
+function fmt(v,d=1){return v==null?'—':Number(v).toFixed(d)}
+function shift(date,n){let x=new Date(date+'T12:00:00');x.setDate(x.getDate()+n);return x.toISOString().slice(0,10)}
+function stats(rows,key,end){let start=shift(end,-29),pEnd=shift(start,-1),pStart=shift(pEnd,-29);let c=rows.filter(x=>x.date>=start&&x.date<=end&&x[key]!=null).map(x=>x[key]),p=rows.filter(x=>x.date>=pStart&&x.date<=pEnd&&x[key]!=null).map(x=>x[key]);return {cur:c.length?c.reduce((a,b)=>a+b,0)/c.length:null,prev:p.length?p.reduce((a,b)=>a+b,0)/p.length:null,n:c.length}}
+function card(title,value,date){return `<div class="metric"><div class="label">${title}</div><div class="value">${value}</div><div class="date">${date||'No reading in export'}</div></div>`}
+function comparison(title,s,unit,d=1){let delta=s.cur==null||s.prev==null?null:s.cur-s.prev;let msg=delta==null?'Not enough data for comparison':`${delta>0?'+':''}${fmt(delta,d)} ${unit} vs previous 30 days`;return `<div class="metric"><div class="label">${title}</div><div class="value">${s.cur==null?'—':fmt(s.cur,d)+(unit==='%'?'%':'')}</div><div class="date">${msg}</div></div>`}
+function chart(id,rows,key,color,unit){if(charts[id])charts[id].destroy();let x=rows.filter(r=>r[key]!=null).slice(-45);charts[id]=new Chart($(id),{type:'line',data:{labels:x.map(r=>r.date.slice(5)),datasets:[{data:x.map(r=>r[key]),borderColor:color,backgroundColor:color+'22',fill:true,tension:.28,pointRadius:0,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${fmt(c.raw,1)} ${unit}`}}},scales:{x:{ticks:{maxTicksLimit:6}},y:{beginAtZero:false}}}})}
+function render(){
+ let rows=allRows();if(!rows.length)return;let end=rows.at(-1).date;
+ const latestMetric=(k)=>latest(rows,k);
+ let h=latestMetric('heart'),r=latestMetric('resting'),v=latestMetric('hrv'),o=latestMetric('oxygen'),s=latestMetric('sleep'),st=latestMetric('steps'),rr=latestMetric('respiratory'),vo=latestMetric('vo2'),ex=latestMetric('exercise');
+ $('snapshot').innerHTML=
+ card('Latest heart rate',h?fmt(h.heart,0)+' bpm':'—',h?.date)+
+ card('Latest resting heart rate',r?fmt(r.resting,0)+' bpm':'—',r?.date)+
+ card('Latest HRV',v?fmt(v.hrv,0)+' ms':'—',v?.date)+
+ card('Latest blood oxygen',o?fmt(o.oxygen,0)+'%':'—',o?.date)+
+ card('Latest sleep',s?`${Math.floor(s.sleep)}h ${Math.round((s.sleep%1)*60)}m`:'—',s?.date)+
+ card('Latest steps',st?Math.round(st.steps).toLocaleString():'—',st?.date)+
+ card('Respiratory rate',rr?fmt(rr.respiratory,1)+' /min':'—',rr?.date)+
+ card('Cardio fitness',vo?fmt(vo.vo2,1)+' VO₂ max':'—',vo?.date)+
+ card('Exercise time',ex?fmt(ex.exercise,0)+' min':'—',ex?.date);
+ const keys=[['Average heart rate','heart','bpm',1],['Resting heart rate','resting','bpm',1],['HRV','hrv','ms',1],['Blood oxygen','oxygen','%',2],['Sleep duration','sleep','hours',2],['Daily steps','steps','steps/day',0],['Respiratory rate','respiratory','/min',1],['VO₂ max','vo2','ml/kg/min',1],['Exercise time','exercise','min/day',0]];
+ $('compare').innerHTML=keys.map(([t,k,u,d])=>comparison(t,stats(rows,k,end),u,d)).join('');
+ chart('heartChart',rows,'heart','#327e9e','bpm');chart('restChart',rows,'resting','#2c6a87','bpm');chart('hrvChart',rows,'hrv','#bd6d87','ms');chart('oxygenChart',rows,'oxygen','#29927f','%');chart('sleepChart',rows,'sleep','#7667b3','hours');chart('stepsChart',rows,'steps','#c49736','steps');chart('respChart',rows,'respiratory','#4c8c7d','/min');chart('vo2Chart',rows,'vo2','#a46b9b','ml/kg/min');chart('exerciseChart',rows,'exercise','#d08b45','minutes');
+ let notes=[];keys.forEach(([t,k,u,d])=>{let q=stats(rows,k,end);if(q.cur!=null&&q.prev!=null){let diff=q.cur-q.prev;notes.push(`<p><strong>${t}:</strong> ${diff>0?'increased':'decreased'} by ${fmt(Math.abs(diff),d)} ${u} on average compared with the previous 30 days.</p>')}});
+ if(!rows.some(x=>x.hrv!=null))notes.push('<p><strong>HRV:</strong> No HRV records were found. Check that Apple Health export includes Heart Rate Variability (SDNN).</p>');
+ notes.push('<p>These comparisons describe changes in your records; they do not label a reading as good or bad. Consider your symptoms, activity and how you feel.</p>');
+ $('summary').innerHTML=notes.join('');$('dashboard').classList.remove('hidden');
+}
+async function importZip(file){
+ if(!window.JSZip)throw Error('The ZIP reader could not load. Check your internet connection and refresh.');
+ $('status').textContent='Opening Apple Health export…';
+ const zip=await JSZip.loadAsync(file);let entry=Object.values(zip.files).find(f=>!f.dir&&f.name.toLowerCase().endsWith('export.xml'));
+ if(!entry)throw Error('Could not find export.xml. Please choose the ZIP created by Apple Health.');
+ $('status').textContent='Reading health records. Large exports can take a few minutes…';
+ const xml=await entry.async('string');$('status').textContent='Analysing Apple Watch measurements…';
+ const parsed=parseExport(xml);dailyData=parsed.result;
+ localStorage.setItem('appleWatchCoachDaily',JSON.stringify(dailyData));
+ render();$('status').textContent=`Import complete: ${parsed.count.toLocaleString()} health measurements processed. Your daily summaries are saved on this device.`;
+}
+$('healthZip').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{await importZip(f)}catch(err){$('status').textContent='Import failed: '+err.message}};
+$('backup').onclick=()=>{if(!Object.keys(dailyData).length){$('status').textContent='Import health data first.';return}let b=new Blob([JSON.stringify(dailyData)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='apple-watch-health-backup.json';a.click();URL.revokeObjectURL(a.href)};
+$('restore').onchange=async e=>{try{dailyData=JSON.parse(await e.target.files[0].text());localStorage.setItem('appleWatchCoachDaily',JSON.stringify(dailyData));render();$('status').textContent='Backup restored on this device.'}catch(err){$('status').textContent='Could not restore that backup.'}};
+try{let saved=localStorage.getItem('appleWatchCoachDaily');if(saved){dailyData=JSON.parse(saved);render();$('status').textContent='Saved Apple Watch data found on this device. Import a new ZIP whenever you want to update it.'}}catch(e){}
+</script>
+</body></html>
